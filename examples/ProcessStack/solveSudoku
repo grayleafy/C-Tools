@@ -1,0 +1,459 @@
+#include<cstdio>
+#include<stack>
+#include<queue>
+#include<map>
+#include<set>
+using namespace std;
+
+
+
+template<typename T>
+//单个递归函数
+class ProcessStackNode{
+public:
+    static bool isBreak;
+    T result;
+
+    virtual ProcessStackNode* find_next_process(){return NULL;}
+
+    virtual void merge_return_value(T previous_return_value){}
+
+    virtual void run(){}
+
+    virtual void traceback(){}
+
+    void breakProcess(){
+        isBreak = true;
+    }
+
+    
+};
+template<typename T>
+bool ProcessStackNode<T>::isBreak = false;
+
+
+
+template<typename T>
+//栈式递归回溯，T代表递归函数的返回值
+class ProcessStack{
+private:
+    stack<ProcessStackNode<T>* > sta;
+public:
+    T run(ProcessStackNode<T>* root){    //new的有问题
+        //初始节点  
+        while (!sta.empty()) sta.pop();
+        sta.push(root);
+        root->isBreak = false;
+        
+
+        int isReturn = false;
+        T previous_return_value;
+        while (!sta.empty()){
+            ProcessStackNode<T> *current_process = sta.top();
+            
+            //printf("deep = %d\n", (int)sta.size());
+
+            //从更深的节点回溯过来
+            if (isReturn){
+                current_process->merge_return_value(previous_return_value);
+            }
+            //第一次执行
+            else{
+                current_process->run();
+            }
+
+
+            //尝试往更深的节点搜索
+            ProcessStackNode<T> *next_process = NULL;
+            //如果未全局中断则找下一个节点
+            if (!current_process->isBreak){
+                next_process = current_process->find_next_process();
+            }
+            //该节点的分支已经遍历完
+            if (next_process == NULL){
+                isReturn = true;
+                previous_return_value = current_process->result;
+                sta.pop();
+                current_process->traceback();
+                delete current_process;
+
+                continue;
+            }
+            //遍历该节点的其它分支
+            else{
+                sta.push(next_process);
+                isReturn = false;
+                continue;
+            }
+        }
+
+        return previous_return_value;
+    }
+
+
+};
+
+
+
+
+
+template<typename TKey, typename Tval>
+//可以通过键值来查找的set
+class MapSet{
+private:
+    set<Tval> data_set;
+    map<TKey, Tval> data_map;
+public:
+    void insert(TKey key, Tval val){
+        data_set.insert(val);
+        data_map[key] = val;
+    }
+
+    Tval get_begin_element(){
+        auto it = data_set.begin();
+        return *it;
+    }
+
+
+
+    void erase(TKey key, Tval val){
+        data_set.erase(val);
+        data_map.erase(key);
+    }
+
+    Tval get_by_key(TKey key){
+        return data_map[key];
+    }
+
+    bool empty(){
+        return data_set.empty();
+    }
+
+    void clear(){
+        data_set.clear();
+        data_map.clear();
+    }
+};
+
+
+
+
+
+
+
+
+
+
+
+
+//*******************************解数独**************************************
+
+struct vector2{
+    int x;
+    int y;
+
+    bool operator < (const vector2 &b)const{
+        if (x == b.x){
+            return y < b.y;
+        }
+        return x < b.x;    
+    }
+};
+
+struct Node{
+    set<int> freedom;
+
+
+    int x;
+    int y;
+
+    bool operator < (const Node &b)const{
+        if (freedom.size() == b.freedom.size()){
+            if (x == b.x){
+                return y < b.y;
+            }
+            return x < b.x;      
+        }
+        
+        return freedom.size() < b.freedom.size();
+        
+    }
+
+    bool operator == (const Node &b){
+        return x == b.x && y == b.y;
+    }
+
+    void init(vector<vector<char>>& board, int x, int y){
+        this->x = x;
+        this->y = y;
+
+        freedom.clear();
+        if (board[x][y] != '.'){
+            return;
+        }
+
+        for (int i = 1; i <= 9; i++){
+            freedom.insert(i);
+        }
+
+        //横
+        for (int i = 0; i < 9; i++){
+            if (board[i][y] != '.'){
+                int num = board[i][y] - '0';
+                freedom.erase(num);
+            }
+        }
+
+        //竖
+        for (int i = 0; i < 9; i++){
+            if (board[x][i] != '.'){
+                int num = board[x][i] - '0';
+                freedom.erase(num);
+            }
+        }
+
+        //3 * 3
+        int x_start = x / 3 * 3;
+        int y_start = y / 3 * 3;
+        for (int i = x_start; i < x_start + 3; i++){
+            for (int j = y_start; j < y_start + 3; j++){
+                if (board[i][j] != '.'){
+                    int num = board[i][j] - '0';
+                    freedom.erase(num);
+                }
+            }
+        }
+    }
+};
+
+
+class SudokuProcessStackNode : public ProcessStackNode<int>{
+public:
+    //全局变量
+    static vector<vector<char>> board;
+    static class MapSet<vector2, Node> left_node;
+    static vector<vector<char>> result;
+    static bool success;
+
+    //单个节点的变量
+    Node node;
+    int select;
+    int next_select = -1;
+
+    static void init(vector<vector<char>>& b){
+        board = b;
+        success = false;
+        left_node.clear();
+
+        for (int i = 0; i < 9; i++){
+            for (int j = 0; j < 9; j++){
+                if (board[i][j] == '.'){
+                    Node node;
+                    node.init(board, i, j);
+                    left_node.insert(vector2{i, j}, node);
+                }
+            }
+        }
+    }
+
+    virtual ProcessStackNode* find_next_process(){
+        Node next_node = left_node.get_begin_element();
+        set<int>::iterator it;
+        if (next_select == -1){
+            it = next_node.freedom.begin();
+        }
+        else{
+            it = next_node.freedom.find(next_select);
+            if (it != next_node.freedom.end()) it++;
+        }
+        if (it == next_node.freedom.end()){
+            return NULL;
+        }
+
+        next_select = *it;
+        SudokuProcessStackNode *next_process = new SudokuProcessStackNode();
+        next_process->node = next_node;
+        next_process->select = *it;
+        printf("next_process x = %d, y = %d, select = %d\n", next_node.x, next_node.y, *it);
+
+        return next_process;
+    }
+
+    virtual void merge_return_value(int previous_return_value) {
+
+    }
+
+    virtual void run(){
+        printf("x = %d, y = %d, select = %d\n", node.x, node.y, select);
+        for (int i = 0; i < 9; i++){
+                    for (int j = 0; j < 9; j++){
+                        
+                        printf("%c ", board[i][j]);
+                    }
+                    printf("\n");
+        }
+
+        left_node.erase(vector2{node.x, node.y}, node);
+        board[node.x][node.y] = select + '0';
+
+        //如果成功
+        if (left_node.empty()){
+            success = true;
+            result = board;
+            breakProcess();
+        }
+        
+        //处理影响的位置
+        {
+            //横
+            for (int i = 0; i < 9; i++){
+                if (i == node.x) continue;
+                if (board[i][node.y] == '.'){
+                    vector2 key{i, node.y};
+                    Node temp = left_node.get_by_key(key);
+                    left_node.erase(key, temp);
+                    temp.freedom.erase(select);
+                    left_node.insert(key, temp);
+                }
+            }
+
+            //竖
+            for (int i = 0; i < 9; i++){
+                if (i == node.y) continue;
+                if (board[node.x][i] == '.'){
+                    vector2 key{node.x, i};
+                    Node temp = left_node.get_by_key(key);
+                    left_node.erase(key, temp);
+                    temp.freedom.erase(select);
+                    left_node.insert(key, temp);
+                }
+            }
+
+            //3 * 3
+            int x_start = node.x / 3 * 3;
+            int y_start = node.y / 3 * 3;
+            for (int i = x_start; i < x_start + 3; i++){
+                for (int j = y_start; j < y_start + 3; j++){
+                    if (i == node.x && j == node.y) continue;
+                    if (board[i][j] == '.'){
+                        vector2 key{i, j};
+                        Node temp = left_node.get_by_key(key);
+                        left_node.erase(key, temp);
+                        temp.freedom.erase(select);
+                        left_node.insert(key, temp);        
+                    }
+                }   
+            }
+        }
+    }
+
+    virtual void traceback(){
+        left_node.insert(vector2{node.x, node.y}, node);
+        board[node.x][node.y] = '.';
+
+        //回溯影响的位置
+        {
+            //横
+            for (int i = 0; i < 9; i++){
+                if (i == node.x) continue;
+                if (board[i][node.y] == '.'){
+                    vector2 key{i, node.y};
+                    Node temp = left_node.get_by_key(key);
+                    left_node.erase(key, temp);
+                    temp.init(board, key.x, key.y);
+                    left_node.insert(key, temp);
+                }
+            }
+
+            //竖
+            for (int i = 0; i < 9; i++){
+                if (i == node.y) continue;
+                if (board[node.x][i] == '.'){
+                    vector2 key{node.x, i};
+                    Node temp = left_node.get_by_key(key);
+                    left_node.erase(key, temp);
+                    temp.init(board, key.x, key.y);
+                    left_node.insert(key, temp);
+                }
+            }
+
+            //3 * 3
+            int x_start = node.x / 3 * 3;
+            int y_start = node.y / 3 * 3;
+            for (int i = x_start; i < x_start + 3; i++){
+                for (int j = y_start; j < y_start + 3; j++){
+                    if (i == node.x && j == node.y) continue;
+                    if (board[i][j] == '.'){
+                        vector2 key{i, j};
+                        Node temp = left_node.get_by_key(key);
+                        left_node.erase(key, temp);
+                        temp.init(board, key.x, key.y);
+                        left_node.insert(key, temp);        
+                    }
+                }   
+            }
+        }
+    }
+};
+vector<vector<char>> SudokuProcessStackNode::board;
+class MapSet<vector2, Node> SudokuProcessStackNode::left_node;
+vector<vector<char>> SudokuProcessStackNode::result;
+bool SudokuProcessStackNode::success = false;
+
+
+class Solution {
+public:
+    void solveSudoku(vector<vector<char>>& board) {
+        for (int i = 0; i < 9; i++){
+                    for (int j = 0; j < 9; j++){
+                        
+                        printf("%c ", board[i][j]);
+                    }
+                    printf("\n");
+        }
+        ProcessStack<int> processStack;
+
+        SudokuProcessStackNode::init(board);
+        Node root_node = SudokuProcessStackNode::left_node.get_begin_element();
+        set<int> selects = root_node.freedom;
+        for (auto it = selects.begin(); it != selects.end(); ++it){
+            int select = *it;
+            SudokuProcessStackNode *root_process = new SudokuProcessStackNode();
+            root_process->node = root_node;
+            root_process->select = select;
+
+            processStack.run(root_process);
+            if (SudokuProcessStackNode::success){
+                //board = SudokuProcessStackNode::result;
+                for (int i = 0; i < 9; i++){
+                    for (int j = 0; j < 9; j++){
+                        board[i][j] = SudokuProcessStackNode::result[i][j];
+                        printf("%c ", board[i][j]);
+                    }
+                    printf("\n");
+                }
+                break;
+            }
+        }
+    }
+};
+
+
+
+
+
+
+
+
+
+
+
+
+
+int main(){
+    vector<vector<char>> board = {{'.','.','9','7','4','8','.','.','.'},{'7','.','.','.','.','.','.','.','.'},{'.','2','.','1','.','9','.','.','.'},{'.','.','7','.','.','.','2','4','.'},{'.','6','4','.','1','.','5','9','.'},{'.','9','8','.','.','.','3','.','.'},{'.','.','.','8','.','3','.','2','.'},{'.','.','.','.','.','.','.','.','6'},{'.','.','.','2','7','5','9','.','.'}};
+    class Solution solution;
+    solution.solveSudoku(board);
+
+    return 0;
+}
